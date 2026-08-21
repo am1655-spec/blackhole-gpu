@@ -1,23 +1,3 @@
-"""
-Phase 1 — static lensed image.
-
-The rendering trick: Schwarzschild spacetime is spherically symmetric,
-so a photon's path only depends on its impact parameter b (how far its
-incoming line would miss the black hole by, if gravity did nothing).
-That means each pixel is an independent 2D polar-coordinate trace --
-no need for full 3D ray tracing. Camera sits far along phi=0 looking at
-the black hole; each pixel's distance from the image center sets its b;
-the pixel's *angle* around the image center is just carried along as a
-"which direction around the black hole" label (azimuth) for sampling
-the background pattern once the ray's done bending.
-
-This file is the plumbing: camera, per-pixel loop, background pattern,
-window display. The physics happens in geodesic.py -- this only calls
-geodesic.step() in a loop and draws whatever comes back. Run it now and
-you'll get a valid image (garbage bending, since geodesic.step() is
-still a placeholder); implement geodesic.step() and rerun to see it
-turn into an actual lensed field.
-"""
 import taichi as ti
 import geodesic
 
@@ -26,8 +6,6 @@ print(f"Taichi backend in use: {ti.lang.impl.current_cfg().arch}")
 
 # --- scene constants (natural units: rs = 1) ---
 RS = 1.0
-CAM_DIST = 20.0 * RS
-ESCAPE_RADIUS = 60.0 * RS
 B_MAX = 7.0 * RS          # impact parameter at the edge of the frame
 H = 0.05                  # integration step size
 MAX_STEPS = 4000
@@ -47,17 +25,18 @@ def background(phi: ti.f32, azimuth: ti.f32) -> ti.math.vec3:
 
 
 @ti.kernel
-def render():
+def render(cam_dist: ti.f32, orbit_angle: ti.f32):
+    escape_radius = cam_dist * 3.0
     cx, cy = W / 2.0, H_RES / 2.0
     max_screen_r = ti.min(cx, cy)
     for x, y in pixels:
         sx = x - cx
         sy = y - cy
         r_screen = ti.sqrt(sx * sx + sy * sy)
-        azimuth = ti.atan2(sy, sx)
+        azimuth = ti.atan2(sy, sx) + orbit_angle
         b = (r_screen / max_screen_r) * B_MAX
 
-        dist = CAM_DIST
+        dist = cam_dist
         phi = 0.0
         ddist = -ti.sqrt(ti.max(0.0, 1.0 - (b * b) / (dist * dist)))
         dphi = b / (dist * dist)
@@ -68,7 +47,7 @@ def render():
             dist, phi, ddist, dphi = geodesic.step(dist, phi, ddist, dphi, RS, H)
             if geodesic.event_horizon_hit(dist, RS):
                 captured = 1
-            if dist > ESCAPE_RADIUS:
+            if dist > escape_radius:
                 step_count = MAX_STEPS
             step_count += 1
 
@@ -79,10 +58,22 @@ def render():
 
 
 if __name__ == "__main__":
-    render()
-    gui = ti.GUI("blackhole-gpu — Phase 1", res=(W, H_RES))
-    gui.set_image(pixels)
-    gui.show("../first_render.png")
+    gui = ti.GUI("blackhole-gpu — Phase 2", res=(W, H_RES))
+    orbit_angle = 0.0
+    CAM_DIST = 50.0 * RS
+    prev_mouse = None
+
     while gui.running:
+        if gui.is_pressed(ti.GUI.LMB):
+            mx, my = gui.get_cursor_pos()
+            if prev_mouse is not None:
+                orbit_angle += (mx - prev_mouse[0]) * 2.0 * 3.14159265
+            prev_mouse = (mx, my)
+        else: prev_mouse = None
+        for e in gui.get_events(ti.GUI.WHEEL):
+            CAM_DIST *= 1.0 - e.delta[1] * 0.001
+        CAM_DIST = min(max(CAM_DIST, 3.0 * RS), 100.0 * RS)
+
+        render(CAM_DIST, orbit_angle)
         gui.set_image(pixels)
         gui.show()
