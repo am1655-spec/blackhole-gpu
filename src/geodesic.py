@@ -40,12 +40,25 @@ import taichi as ti
 @ti.func
 def step(dist: ti.f32, phi: ti.f32, ddist: ti.f32, dphi: ti.f32,
          rs: ti.f32, h: ti.f32):
-    # TODO: replace with RK4 integration of the geodesic equations.
-    # Placeholder: straight-line motion (no gravity), so the rest of the
-    # pipeline has something valid to render before you touch this.
-    new_dist = dist + ddist * h
-    new_phi = phi + dphi * h
-    return new_dist, new_phi, ddist, dphi
+    k1 = derivatives(dist, phi, ddist, dphi, rs)
+    k2 = derivatives(dist + 0.5 * h * k1[0], phi + 0.5 * h * k1[1],
+                     ddist + 0.5 * h * k1[2], dphi + 0.5 * h * k1[3], rs)
+    k3 = derivatives(dist + 0.5 * h * k2[0], phi + 0.5 * h * k2[1],
+                     ddist + 0.5 * h * k2[2], dphi + 0.5 * h * k2[3], rs)
+    k4 = derivatives(dist + h * k3[0], phi + h * k3[1],
+                         ddist + h * k3[2], dphi + h * k3[3], rs)
+    new_dist = dist + (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]) * h / 6
+    new_phi = phi + (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]) * h / 6
+    new_ddist = ddist + (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]) * h / 6
+    new_dphi = dphi + (k1[3] + 2 * k2[3] + 2 * k3[3] + k4[3]) * h / 6
+    return new_dist, new_phi, new_ddist, new_dphi
+
+
+@ti.func
+def derivatives(dist: ti.f32, phi: ti.f32, ddist: ti.f32, dphi: ti.f32,
+                rs: ti.f32):
+    return ddist, dphi, (dphi * dphi * (dist - 1.5*rs)), ((-2.0 * ddist * dphi) / dist)
+    
 
 
 @ti.func
