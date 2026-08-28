@@ -1,6 +1,7 @@
 import taichi as ti
 import numpy as np
 import geodesic
+import sky
 
 ti.init(arch=ti.gpu)
 print(f"Taichi backend in use: {ti.lang.impl.current_cfg().arch}")
@@ -11,69 +12,8 @@ H = 0.05                  # integration step size
 MAX_STEPS = 4000
 fov = 0.5                  # camera field of view (radians)
 
-STAR_DENSITY = 100       # star lattice cells per unit direction vector
-STAR_THRESHOLD = 0.986      # higher = sparser stars
-
-# SUN1 sits directly behind the black hole along the default camera's view
-# axis (cam_pos starts at (0,0,10) facing (0,0,-1) -- see render()/__main__),
-# i.e. source-lens-observer are aligned by default. That alignment is what
-# makes an Einstein ring visible at all -- rays near the critical impact
-# parameter bend ~180 deg and land back on this same axis, so this source
-# shows up as a ring wrapped around the black hole's silhouette instead of
-# a normal point. Sized a bit larger than a "real" point source so the ring
-# is robust to small camera drift rather than needing pixel-perfect aim.
-SUN1_DIR = ti.math.vec3(0.0, 0.0, -1.0)
-SUN1_COLOR = ti.math.vec3(1.0, 0.85, 0.55)
-SUN1_CORE_COS = float(np.cos(np.radians(5.0)))    # hard disk edge
-SUN1_GLOW_COS = float(np.cos(np.radians(18.0)))   # soft halo edge
-
-# SUN2 is off-axis -- an ordinary, unlensed star for comparison. It should
-# look like a plain glowing dot with no ring, since nothing bends light
-# toward it from this camera position.
-SUN2_DIR = ti.math.vec3(-0.9, -0.15, 0.5)
-SUN2_COLOR = ti.math.vec3(0.6, 0.78, 1.0)
-SUN2_CORE_COS = float(np.cos(np.radians(2.2)))
-SUN2_GLOW_COS = float(np.cos(np.radians(11.0)))
-
-W, H_RES = 800, 800
+W, H_RES = 640, 640
 pixels = ti.Vector.field(3, dtype=ti.f32, shape=(W, H_RES))
-
-
-@ti.func
-def hash13(p: ti.math.vec3) -> ti.f32:
-    # cheap GPU-friendly 3D->1D hash (Dave Hoskins-style), no lookup table needed
-    p = ti.math.fract(p * 0.3183099 + 0.1)
-    p = p * 17.0
-    return ti.math.fract(p[0] * p[1] * p[2] * (p[0] + p[1] + p[2]))
-
-
-@ti.func
-def sun_glow(dir: ti.math.vec3, sun_dir: ti.math.vec3, color: ti.math.vec3,
-             core_cos: ti.f32, glow_cos: ti.f32) -> ti.math.vec3:
-    d = ti.math.dot(dir, ti.math.normalize(sun_dir))
-    core = ti.math.smoothstep(core_cos - 0.001, core_cos, d)
-    glow = ti.math.smoothstep(glow_cos, core_cos, d) * 0.35
-    return color * (core + glow)
-
-
-@ti.func
-def background(dir: ti.math.vec3) -> ti.math.vec3:
-    # Deep-space gradient (subtly brighter toward the top of the scene)
-    # plus a procedural starfield: bucket the unit direction into a coarse
-    # 3D lattice and hash each cell to decide if/how bright a star sits there.
-    # Sampling the *direction* rather than a lat/long grid avoids pinching
-    # at the poles the way a naive equirectangular texture would.
-    sky = ti.math.vec3(0.01, 0.012, 0.02) + 0.01 * ti.max(0.0, dir[1])
-
-    cell = ti.floor(dir * STAR_DENSITY)
-    star_roll = hash13(cell)
-    star = ti.math.smoothstep(STAR_THRESHOLD, 1.0, star_roll)
-    twinkle = 0.6 + 0.4 * hash13(cell + 7.0)
-
-    color = sky + star * twinkle * ti.math.vec3(1.0, 1.0, 0.96)
-    color += sun_glow(dir, SUN1_DIR, SUN1_COLOR, SUN1_CORE_COS, SUN1_GLOW_COS)
-    color += sun_glow(dir, SUN2_DIR, SUN2_COLOR, SUN2_CORE_COS, SUN2_GLOW_COS)
-    return color
 
 
 @ti.kernel
@@ -114,7 +54,7 @@ def render(cam_pos: ti.math.vec3, pitch: ti.f32, yaw: ti.f32):
         if captured == 1:
             pixels[x, y] = ti.Vector([0.0, 0.0, 0.0])
         else:
-            pixels[x, y] = background(sky_dir)
+            pixels[x, y] = sky.background(sky_dir)
 
 
 if __name__ == "__main__":
