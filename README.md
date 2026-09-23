@@ -11,6 +11,26 @@ It integrates Schwarzschild null geodesics per pixel with RK4 and uses
 a mouse-controlled 3D camera to display gravitational lensing. Taichi
 selects a GPU backend, such as CUDA or Vulkan, depending on the machine.
 
+## Demo
+
+![Scripted camera zoom and look-around rendered by the project](docs/demo.gif)
+
+[Full-resolution MP4](docs/demo.mp4) · 640 × 640, six-second loop.
+Captured from the unchanged renderer on CUDA using a scripted camera path
+(distance 80 to 55 Schwarzschild radii and back, with a small look-around).
+Video playback is 30 fps; this is not an interactive-performance benchmark.
+The bright ring is the lensing of the procedural background light source,
+not an accretion disk.
+
+The capture script and demo packaging were added by Codex in September 2026;
+they are separate from the original one-day project and its Claude Code
+attribution below. To reproduce the frames in the project's environment:
+
+```bash
+python scripts/capture_demo.py /tmp/blackhole-frames --frames 180
+ffmpeg -framerate 30 -i /tmp/blackhole-frames/%04d.png -c:v libx264 -crf 19 -pix_fmt yuv420p -movflags +faststart demo.mp4
+```
+
 ## Authorship and Claude Code assistance
 
 I built this with substantial help from Claude Code. The division of work:
